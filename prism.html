@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PRISM – Pull Request Intelligent Spec Matcher</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:       #0d0f11;
+      --surface:  #151719;
+      --border:   #252830;
+      --border-bright: #353a44;
+      --text:     #e2e4e9;
+      --muted:    #6b7280;
+      --accent:   #4f8ef7;
+      --accent-dim: rgba(79,142,247,0.12);
+      --pass-bg:  rgba(34,197,94,0.08);
+      --pass-border: rgba(34,197,94,0.35);
+      --pass-text: #4ade80;
+      --fail-bg:  rgba(239,68,68,0.08);
+      --fail-border: rgba(239,68,68,0.35);
+      --fail-text: #f87171;
+      --partial-bg:  rgba(234,179,8,0.08);
+      --partial-border: rgba(234,179,8,0.35);
+      --partial-text: #facc15;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      padding: 0 0 80px;
+    }
+
+    /* ── NOISE TEXTURE OVERLAY ─────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.5;
+    }
+
+    /* ── HEADER ─────────────────────────────────── */
+    header {
+      position: relative;
+      border-bottom: 1px solid var(--border);
+      padding: 28px 40px 24px;
+      display: flex;
+      align-items: flex-end;
+      gap: 20px;
+      background: var(--surface);
+    }
+
+    .header-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid rgba(79,142,247,0.3);
+      border-radius: 3px;
+      padding: 3px 8px;
+      margin-bottom: 4px;
+      display: inline-block;
+    }
+
+    h1 {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: clamp(18px, 2.8vw, 26px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    h1 span {
+      color: var(--accent);
+    }
+
+    .header-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    /* ── MAIN CONTAINER ─────────────────────────── */
+    main {
+      position: relative;
+      z-index: 1;
+      max-width: 860px;
+      margin: 48px auto 0;
+      padding: 0 24px;
+    }
+
+    /* ── CARD ───────────────────────────────────── */
+    .card-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 32px;
+    }
+
+    /* ── FORM ELEMENTS ──────────────────────────── */
+    .field-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .field-label::before {
+      content: '';
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-size: 13.5px;
+      line-height: 1.6;
+      padding: 12px 14px;
+      transition: border-color .15s, box-shadow .15s;
+      outline: none;
+      resize: vertical;
+    }
+
+    textarea { min-height: 140px; }
+
+    textarea::placeholder, input::placeholder { color: #3d424d; }
+
+    textarea:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79,142,247,0.12);
+    }
+
+    .field-group { margin-bottom: 20px; }
+
+    /* ── DIVIDER ────────────────────────────────── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 24px 0;
+    }
+
+    /* ── ANALYZE BUTTON ─────────────────────────── */
+    #analyzeBtn {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 32px;
+      cursor: pointer;
+      width: 100%;
+      transition: background .15s, transform .1s, box-shadow .15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    #analyzeBtn:hover {
+      background: #5f9bff;
+      box-shadow: 0 0 20px rgba(79,142,247,0.35);
+    }
+
+    #analyzeBtn:active { transform: scale(0.985); }
+
+    #analyzeBtn:disabled {
+      background: #1e2228;
+      color: var(--muted);
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* ── SPINNER ────────────────────────────────── */
+    #spinner {
+      display: none;
+      text-align: center;
+      padding: 48px 0;
+    }
+
+    .spinner-ring {
+      width: 36px; height: 36px;
+      border: 2.5px solid var(--border-bright);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .spinner-text {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    /* ── RESULTS SECTION ────────────────────────── */
+    #resultsSection { display: none; margin-top: 36px; }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .results-title {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .results-title::before {
+      content: '';
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #4ade80;
+    }
+
+    .count-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      background: var(--border);
+      color: var(--muted);
+      border-radius: 3px;
+      padding: 2px 7px;
+    }
+
+    /* ── SUMMARY PILLS ──────────────────────────── */
+    .summary-pills {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 20px;
+      letter-spacing: .06em;
+    }
+
+    .pill-pass    { background: var(--pass-bg);    border: 1px solid var(--pass-border);    color: var(--pass-text); }
+    .pill-fail    { background: var(--fail-bg);    border: 1px solid var(--fail-border);    color: var(--fail-text); }
+    .pill-partial { background: var(--partial-bg); border: 1px solid var(--partial-border); color: var(--partial-text); }
+
+    /* ── TABLE ──────────────────────────────────── */
+    .table-wrapper {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+
+    thead tr {
+      background: #111315;
+    }
+
+    thead th {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .12s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+
+    tbody tr.row-pass    { background: var(--pass-bg); }
+    tbody tr.row-fail    { background: var(--fail-bg); }
+    tbody tr.row-partial { background: var(--partial-bg); }
+
+    tbody tr:hover { filter: brightness(1.12); }
+
+    td {
+      padding: 14px 16px;
+      vertical-align: top;
+      line-height: 1.55;
+    }
+
+    td:first-child {
+      font-weight: 500;
+      color: var(--text);
+      max-width: 280px;
+    }
+
+    .verdict-chip {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      padding: 3px 9px;
+      border-radius: 4px;
+      display: inline-block;
+      white-space: nowrap;
+    }
+
+    .chip-pass    { background: var(--pass-bg);    border: 1px solid var(--pass-border);    color: var(--pass-text); }
+    .chip-fail    { background: var(--fail-bg);    border: 1px solid var(--fail-border);    color: var(--fail-text); }
+    .chip-partial { background: var(--partial-bg); border: 1px solid var(--partial-border); color: var(--partial-text); }
+
+    td.evidence-cell {
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 400px;
+    }
+
+    /* ── ERROR BANNER ───────────────────────────── */
+    #errorBanner {
+      display: none;
+      margin-top: 20px;
+      padding: 12px 16px;
+      background: var(--fail-bg);
+      border: 1px solid var(--fail-border);
+      border-radius: 6px;
+      color: var(--fail-text);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+    }
+
+    /* ── COMPLIANCE SCORE ───────────────────────── */
+    .score-bar-wrap {
+      margin-bottom: 20px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+
+    .score-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .score-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .score-value {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .score-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .score-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width .6s ease;
+    }
+
+    /* ── FADE-IN ANIMATION ──────────────────────── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .fade-in { animation: fadeUp .3s ease both; }
+
+    /* ── SCROLLBAR ──────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+  <!-- ── HEADER ──────────────────────────────────── -->
+  <header>
+    <div>
+      <div class="header-badge">v1.0 &middot; Developer Tooling</div>
+      <h1><span>PRISM</span></h1>
+      <p class="header-sub">Pull Request Intelligent Spec Matcher &nbsp;&middot;&nbsp; verify PRs against Jira requirements</p>
+    </div>
+  </header>
+
+  <!-- ── MAIN ────────────────────────────────────── -->
+  <main>
+    <div class="card-panel fade-in">
+
+      <!-- Jira Ticket -->
+      <div class="field-group">
+        <div class="field-label">Jira Ticket Description</div>
+        <textarea id="jiraTicket" placeholder="Paste the Jira ticket description here..."></textarea>
+      </div>
+
+      <!-- PR URL -->
+      <div class="field-group">
+        <div class="field-label">GitHub Pull Request URL</div>
+        <input type="text" id="prUrl" placeholder="https://github.com/user/repo/pull/123"/>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Analyze Button -->
+      <button id="analyzeBtn" onclick="runAnalysis()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        Run PRISM
+      </button>
+
+      <!-- Error -->
+      <div id="errorBanner"></div>
+
+    </div><!-- /card-panel -->
+
+    <!-- Spinner -->
+    <div id="spinner">
+      <div class="spinner-ring"></div>
+      <div class="spinner-text">PRISM is matching specs to diff...</div>
+    </div>
+
+    <!-- Results -->
+    <div id="resultsSection" class="fade-in">
+      <div class="results-header">
+        <div class="results-title">Analysis Results</div>
+        <span class="count-badge" id="countBadge">0 requirements</span>
+      </div>
+
+      <div class="summary-pills" id="summaryPills"></div>
+
+      <div class="score-bar-wrap" id="scoreWrap">
+        <div class="score-row">
+          <span class="score-label">PR Compliance Score</span>
+          <span class="score-value" id="scoreValue">0%</span>
+        </div>
+        <div class="progress" style="height:8px; background:var(--border); border-radius:4px;">
+          <div id="scoreFill"
+               class="progress-bar"
+               role="progressbar"
+               style="width:0%; border-radius:4px; transition:width .6s ease;"
+               aria-valuenow="0"
+               aria-valuemin="0"
+               aria-valuemax="100">
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Requirement</th>
+              <th>Verdict</th>
+              <th>Evidence</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    async function runAnalysis() {
+      const jiraTicket = document.getElementById('jiraTicket').value.trim();
+      const prUrl      = document.getElementById('prUrl').value.trim();
+      const btn        = document.getElementById('analyzeBtn');
+      const spinner    = document.getElementById('spinner');
+      const results    = document.getElementById('resultsSection');
+      const errBanner  = document.getElementById('errorBanner');
+
+      // ── Basic validation ──────────────────────
+      if (!jiraTicket) return showError('Jira ticket description cannot be empty.');
+      if (!prUrl)      return showError('GitHub PR URL cannot be empty.');
+      if (!/^https:\/\/github\.com\/.+\/pull\/\d+/.test(prUrl))
+        return showError('That doesn\'t look like a valid GitHub PR URL. Try: https://github.com/user/repo/pull/123');
+
+      // ── Reset UI ──────────────────────────────
+      errBanner.style.display  = 'none';
+      results.style.display    = 'none';
+      spinner.style.display    = 'block';
+      btn.disabled             = true;
+
+      try {
+        const res = await fetch('/analyze', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ jira_ticket: jiraTicket, pr_url: prUrl })
+        });
+
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(`Server returned ${res.status}: ${msg}`);
+        }
+
+        const data = await res.json();
+        renderResults(data.results || [], data.compliance_score ?? 0);
+
+      } catch (err) {
+        showError(err.message || 'Something went wrong. Is the backend running?');
+      } finally {
+        spinner.style.display = 'none';
+        btn.disabled          = false;
+      }
+    }
+
+    function renderResults(rows, score) {
+      const tbody   = document.getElementById('resultsBody');
+      const section = document.getElementById('resultsSection');
+      const pills   = document.getElementById('summaryPills');
+      const badge   = document.getElementById('countBadge');
+
+      tbody.innerHTML = '';
+      pills.innerHTML = '';
+
+      // ── Compliance score bar ──────────────────
+      const scoreValue = document.getElementById('scoreValue');
+      const scoreFill  = document.getElementById('scoreFill');
+      const pct = Math.max(0, Math.min(100, score));
+
+      scoreValue.textContent    = `${pct}%`;
+      scoreFill.style.width     = `${pct}%`;
+      scoreFill.setAttribute('aria-valuenow', pct);
+
+      scoreFill.classList.remove('bg-success', 'bg-warning', 'bg-danger');
+      scoreFill.classList.add(pct >= 80 ? 'bg-success'
+                            : pct >= 50 ? 'bg-warning'
+                            :             'bg-danger');
+
+      // ── Count by verdict ──────────────────────
+      const counts = { PASS: 0, FAIL: 0, PARTIAL: 0 };
+      rows.forEach(r => {
+        const v = (r.verdict || '').toUpperCase();
+        if (counts[v] !== undefined) counts[v]++;
+      });
+
+      badge.textContent = `${rows.length} requirement${rows.length !== 1 ? 's' : ''}`;
+
+      const pillDefs = [
+        { key: 'PASS',    cls: 'pill-pass',    label: '✓ Pass' },
+        { key: 'FAIL',    cls: 'pill-fail',    label: '✗ Fail' },
+        { key: 'PARTIAL', cls: 'pill-partial', label: '◑ Partial' }
+      ];
+      pillDefs.forEach(({ key, cls, label }) => {
+        if (counts[key] > 0) {
+          const p = document.createElement('span');
+          p.className   = `pill ${cls}`;
+          p.textContent = `${label}: ${counts[key]}`;
+          pills.appendChild(p);
+        }
+      });
+
+      // ── Build rows ────────────────────────────
+      rows.forEach((row, i) => {
+        const verdict = (row.verdict || '').toUpperCase();
+        const rowCls  = verdict === 'PASS' ? 'row-pass'
+                      : verdict === 'FAIL' ? 'row-fail'
+                      : 'row-partial';
+        const chipCls = verdict === 'PASS' ? 'chip-pass'
+                      : verdict === 'FAIL' ? 'chip-fail'
+                      : 'chip-partial';
+
+        const tr = document.createElement('tr');
+        tr.className = rowCls;
+        tr.innerHTML = `
+          <td style="color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size:11px; white-space:nowrap;">${String(i + 1).padStart(2, '0')}</td>
+          <td>${escHtml(row.requirement || '—')}</td>
+          <td><span class="verdict-chip ${chipCls}">${escHtml(verdict || 'UNKNOWN')}</span></td>
+          <td class="evidence-cell">${escHtml(row.evidence || '—')}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      section.style.display = 'block';
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function showError(msg) {
+      const errBanner = document.getElementById('errorBanner');
+      errBanner.textContent = '⚠ ' + msg;
+      errBanner.style.display = 'block';
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g,  '&amp;')
+        .replace(/</g,  '&lt;')
+        .replace(/>/g,  '&gt;')
+        .replace(/"/g,  '&quot;')
+        .replace(/'/g,  '&#39;');
+    }
+  </script>
+</body>
+</html>
