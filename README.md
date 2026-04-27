@@ -25,7 +25,7 @@ Manual PR reviews are slow and inconsistent. Reviewers check for style and logic
 
 ## Demo
 
-> No live deployment currently (Render free tier — spins down on inactivity). To run locally, see setup below.
+> **Live demo:** https://prism-aduk.onrender.com — hosted on Render free tier, may take ~30 seconds to wake up on first load.
 
 ---
 
