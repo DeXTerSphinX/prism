@@ -82,17 +82,24 @@ def filter_diff(diff_text: str, char_limit: int = 4000) -> str:
     """
     Reduce noise in a unified diff before sending it to the LLM.
 
-    Keeps only added lines (starting with "+"), excludes file-header
-    lines ("+++"), joins them, and truncates to `char_limit` characters.
+    Keeps:
+    - Added lines (starting with "+" but not "+++")
+    - Deleted lines (starting with "-" but not "---")
+    - Hunk headers (starting with "@@")
 
-    Returns the filtered diff string.
+    Drops everything else: file headers (diff --git, index), context lines,
+    blank lines, and markers (+++, ---).
+
+    Returns the filtered diff string, truncated to `char_limit` characters.
     """
-    added_lines = [
+    kept_lines = [
         line for line in diff_text.splitlines()
-        if line.startswith("+") and not line.startswith("+++")
+        if (line.startswith("+") and not line.startswith("+++")) or
+           (line.startswith("-") and not line.startswith("---")) or
+           line.startswith("@@")
     ]
-    filtered = "\n".join(added_lines)
-    return filtered[:char_limit]
+    filtered = "\n".join(kept_lines)
+    return filtered[:char_limit]  # Truncate to stay within LLM context limits
 
 
 def extract_requirements(jira_text: str) -> list[str]:
@@ -201,7 +208,7 @@ def analyze_requirements(requirements: list[str], diff: str) -> list[dict]:
     "You are a senior software engineer performing a pull request review.\n"
     "You will receive:\n"
     "1. A list of requirements extracted from a Jira ticket.\n"
-    "2. A filtered pull request diff containing only added lines.\n\n"
+    "2. A filtered pull request diff containing added lines (prefixed +), removed lines (prefixed -), and hunk headers (prefixed @@).\n\n"
 
     "Your task is to determine whether each requirement is implemented in the diff.\n\n"
 
@@ -219,7 +226,7 @@ def analyze_requirements(requirements: list[str], diff: str) -> list[dict]:
 
     user_prompt = (
         f"Requirements:\n{numbered}\n\n"
-        f"Filtered diff (added lines):\n{diff}"
+        f"Filtered diff (added/removed lines and hunk headers):\n{diff}"
     )
 
     payload = {
@@ -229,7 +236,7 @@ def analyze_requirements(requirements: list[str], diff: str) -> list[dict]:
             {"role": "user",   "content": user_prompt},
         ],
         "temperature": 0,
-        "max_tokens": 600
+        "max_tokens": 1500  # needs headroom for multi-requirement JSON responses — truncation causes silent parse failures
     }
 
     headers = {
